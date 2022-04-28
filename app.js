@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { MongoClient} from "mongodb";
 import Joi from "joi";
+import dayjs from "dayjs";
 
 const PORT = 5001;
 const DB_NAME = "UOL_batePapo";
@@ -28,6 +29,7 @@ app.post("/participants", async (req, res)=>{
         await mongoClient.connect();
         database = mongoClient.db(DB_NAME);
         const participants = database.collection("participants");
+        const messages = database.collection("messages");
 
         const participantAlreadyExists = await participants.findOne(
             {name: value}
@@ -38,9 +40,23 @@ app.post("/participants", async (req, res)=>{
             return res.sendStatus(409);
         }
 
+        const date = Date.now();
+        const clock = dayjs(date);
+
         await participants.insertOne(
-            {name: value, lastStatus: Date.now()}
+            {name: value, lastStatus: date}
         );
+
+        await messages.insertOne(
+            {
+                from: value,
+                to: "Todos",
+                text: "Entra na sala...",
+                type: "status",
+                time: `${clock.hour()}:${clock.minute()}:${clock.second()}`
+            }
+
+        )
 
         res.sendStatus(201);
         mongoClient.close();
@@ -55,8 +71,6 @@ app.get("/participants", async (req, res)=>{
     try {
         await mongoClient.connect();
         const allParticipants = await mongoClient.db(DB_NAME).collection("participants").find().toArray();
-        console.log(allParticipants);
-
         res.send(allParticipants);
         mongoClient.close();
     } catch (e) {
