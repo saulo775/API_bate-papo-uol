@@ -15,7 +15,12 @@ let database = null;
 const mongoClient = new MongoClient("mongodb://localhost/27017");
 
 const userSchema = Joi.object({
-    name: Joi.string().not(null).required(),
+    name: Joi.string().not(null).required()
+})
+
+const messageSchema = Joi.object({
+    to: Joi.string().not(null),
+    text: Joi.string().not(null),
 })
 
 app.post("/participants", async (req, res)=>{
@@ -32,7 +37,7 @@ app.post("/participants", async (req, res)=>{
         const messages = database.collection("messages");
 
         const participantAlreadyExists = await participants.findOne(
-            {name: value}
+            {name: value.name}
         );
 
         if (participantAlreadyExists) {
@@ -44,7 +49,7 @@ app.post("/participants", async (req, res)=>{
         const clock = dayjs(date);
 
         await participants.insertOne(
-            {name: value, lastStatus: date}
+            {name: value.name, lastStatus: date}
         );
 
         await messages.insertOne(
@@ -79,6 +84,33 @@ app.get("/participants", async (req, res)=>{
         mongoClient.close();
     }
 })
+
+app.post("/messages", async (req, res, next)=>{
+    const {to, text, type} = req.body;
+    const User = req.headers['user']
+
+
+    const {error, value} = messageSchema.validate({to, text});
+    if (error) {
+        return res.sendStatus(422);
+    }
+
+    if (type !== "private_message" && type !== "message") {
+        return res.sendStatus(422);
+    }
+
+    try {
+        await mongoClient.connect();
+        const messageDestinate = await mongoClient.db(DB_NAME).collection("participants").findOne({name: User});
+        if (messageDestinate === null) {
+            return res.sendStatus(422);
+        }
+    } catch (e) {
+        console.log("Não foi possível encontrar o usuário", e);
+        res.status(422);
+    }
+    res.status(200).send(User);
+});
 
 
 app.listen(PORT, ()=>{
