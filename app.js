@@ -46,8 +46,6 @@ app.post("/participants", async (req, res)=>{
         }
 
         const date = Date.now();
-        const clock = dayjs(date);
-
         await participants.insertOne(
             {name: value.name, lastStatus: date}
         );
@@ -58,10 +56,9 @@ app.post("/participants", async (req, res)=>{
                 to: "Todos",
                 text: "Entra na sala...",
                 type: "status",
-                time: `${clock.hour()}:${clock.minute()}:${clock.second()}`
+                time: `${getExactHour()}`
             }
-
-        )
+        );
 
         res.sendStatus(201);
         mongoClient.close();
@@ -87,10 +84,9 @@ app.get("/participants", async (req, res)=>{
 
 app.post("/messages", async (req, res, next)=>{
     const {to, text, type} = req.body;
-    const User = req.headers['user']
-
-
+    const User = req.headers['user'];
     const {error, value} = messageSchema.validate({to, text});
+
     if (error) {
         return res.sendStatus(422);
     }
@@ -105,14 +101,30 @@ app.post("/messages", async (req, res, next)=>{
         if (messageDestinate === null) {
             return res.sendStatus(422);
         }
+
+        await mongoClient.db(DB_NAME).collection("messages").insertOne({
+            from: messageDestinate,
+            to: value.to,
+            text: value.text,
+            type: type,
+            time: getExactHour(),
+        });
+        res.sendStatus(201);
     } catch (e) {
-        console.log("Não foi possível encontrar o usuário", e);
-        res.status(422);
+        console.log("Não foi possível conectar ao banco", e);
+        res.sendStatus(500);
+    } finally {
+        await mongoClient.close();
     }
-    res.status(200).send(User);
 });
 
 
+
+function getExactHour() {
+    const clock = dayjs(Date.now());
+    return `${clock.hour()}:${clock.minute()}:${clock.second()}`;
+}
+
 app.listen(PORT, ()=>{
-    console.log(`Servidor rodando na porta ${PORT}`)
+    console.log(`Servidor rodando na porta ${PORT}`);
 })
