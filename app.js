@@ -112,8 +112,16 @@ app.post("/messages", async (req, res)=>{
 });
 
 app.get("/messages", async (req, res)=>{
+    const {limit} = req.query;
     try {
-        const messages = await database.collection("messages").find().toArray();
+        let messages = null;
+        if(!limit){
+            console.log("nao veio");
+            messages = await database.collection("messages").find().toArray();
+        }
+        else{
+            messages = await database.collection("messages").find().sort({$natural:-1}).limit(parseInt(limit)).toArray();
+        }
         res.send(messages);
     } catch (e) {
         console.log("Não foi possível buscar as mensagens", e);
