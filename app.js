@@ -145,6 +145,26 @@ app.get("/messages", async (req, res)=>{
     }
 });
 
+app.put("/status", async (req, res)=>{
+    const User = req.headers['user'];
+
+    try {
+        const userToUpdate = await database.collection("participants").findOne({name: User});
+        if (userToUpdate === null) {
+            return res.sendStatus(404);
+        }
+        await database.collection("participants").findOneAndUpdate(
+            {name:User}, 
+            {$set:{lastStatus: Date.now()}}
+        );
+        res.sendStatus(200);
+    } catch (e) {
+        console.log("Não foi possível alterar o usuário", e);
+        res.sendStatus(500);
+    }
+})
+
+
 function getExactHour() {
     const clock = dayjs(Date.now());
     return `${clock.hour()}:${clock.minute()}:${clock.second()}`;
