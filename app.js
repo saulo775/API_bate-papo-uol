@@ -3,6 +3,7 @@ import cors from "cors";
 import { MongoClient} from "mongodb";
 import Joi from "joi";
 import dayjs from "dayjs";
+import chalk from "chalk";
 
 const PORT = 5001;
 const DB_NAME = "UOL_batePapo";
@@ -13,17 +14,20 @@ app.use(cors());
 
 let database = null;
 const mongoClient = new MongoClient("mongodb://localhost/27017");
-
-const userSchema = Joi.object({
-    name: Joi.string().not(null).required()
-})
-
-const messageSchema = Joi.object({
-    to: Joi.string().not(null),
-    text: Joi.string().not(null),
+const promise = mongoClient.connect();
+promise.then(()=>{
+    database = mongoClient.db(DB_NAME);
+    console.log(chalk.bold.blue("Conectado ao banco"));
+});
+promise.catch((e)=>{
+    console.log("Problema ao conectar ao banco de dados", e);
 })
 
 app.post("/participants", async (req, res)=>{
+    const userSchema = Joi.object({
+        name: Joi.string().not(null).required()
+    });
+
     const {error, value} = userSchema.validate(req.body);
 
     if (error) {
@@ -31,58 +35,50 @@ app.post("/participants", async (req, res)=>{
     }
 
     try{
-        await mongoClient.connect();
-        database = mongoClient.db(DB_NAME);
-        const participants = database.collection("participants");
-        const messages = database.collection("messages");
-
-        const participantAlreadyExists = await participants.findOne(
+        const participantAlreadyExists = await database.collection("participants").findOne(
             {name: value.name}
         );
 
         if (participantAlreadyExists) {
-            mongoClient.close();
             return res.sendStatus(409);
         }
 
         const date = Date.now();
-        await participants.insertOne(
+        await database.collection("participants").insertOne(
             {name: value.name, lastStatus: date}
         );
 
-        await messages.insertOne(
+        await database.collection("messages").insertOne(
             {
-                from: value,
+                from: value.name,
                 to: "Todos",
                 text: "Entra na sala...",
                 type: "status",
                 time: `${getExactHour()}`
             }
         );
-
         res.sendStatus(201);
-        mongoClient.close();
     }catch(e){
-        res.sendStatus(500);
-        console.log("Não foi possível conectar ao banco de dados!");
-        mongoClient.close();
+        res.status(500).send("Ocorreu um erro ao salvar os participantes", e);
     }
 });
 
 app.get("/participants", async (req, res)=>{
     try {
-        await mongoClient.connect();
-        const allParticipants = await mongoClient.db(DB_NAME).collection("participants").find().toArray();
+        const allParticipants = await database.collection("participants").find().toArray();
         res.send(allParticipants);
-        mongoClient.close();
     } catch (e) {
         console.log(e);
-        res.sendStatus(500);
-        mongoClient.close();
+        res.status(500).send("Erro ao buscar os participantes", e);
     }
 })
 
-app.post("/messages", async (req, res, next)=>{
+app.post("/messages", async (req, res)=>{
+    const messageSchema = Joi.object({
+        to: Joi.string().not(null),
+        text: Joi.string().not(null),
+    });
+
     const {to, text, type} = req.body;
     const User = req.headers['user'];
     const {error, value} = messageSchema.validate({to, text});
@@ -96,14 +92,13 @@ app.post("/messages", async (req, res, next)=>{
     }
 
     try {
-        await mongoClient.connect();
-        const messageDestinate = await mongoClient.db(DB_NAME).collection("participants").findOne({name: User});
+        const messageDestinate = await database.collection("participants").findOne({name: User});
         if (messageDestinate === null) {
             return res.sendStatus(422);
         }
 
-        await mongoClient.db(DB_NAME).collection("messages").insertOne({
-            from: messageDestinate,
+        await database.collection("messages").insertOne({
+            from: messageDestinate.name,
             to: value.to,
             text: value.text,
             type: type,
@@ -111,10 +106,8 @@ app.post("/messages", async (req, res, next)=>{
         });
         res.sendStatus(201);
     } catch (e) {
-        console.log("Não foi possível conectar ao banco", e);
+        console.log("Não foi possível salvar a mensagem!", e);
         res.sendStatus(500);
-    } finally {
-        await mongoClient.close();
     }
 });
 
@@ -126,5 +119,5 @@ function getExactHour() {
 }
 
 app.listen(PORT, ()=>{
-    console.log(`Servidor rodando na porta ${PORT}`);
+    console.log(chalk.bold.yellow(`Servidor rodando na porta ${PORT}`));
 })
