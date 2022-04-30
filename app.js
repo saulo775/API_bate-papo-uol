@@ -113,14 +113,30 @@ app.post("/messages", async (req, res)=>{
 
 app.get("/messages", async (req, res)=>{
     const {limit} = req.query;
+    const User = req.headers['user'];
     try {
         let messages = null;
         if(!limit){
-            console.log("nao veio");
-            messages = await database.collection("messages").find().toArray();
+            messages = await database.collection("messages").find(
+                { 
+                    $or: [ 
+                        {from: User}, 
+                        {to:   User},
+                        {to:   'Todos'},
+                    ] 
+                }
+            ).toArray();
         }
         else{
-            messages = await database.collection("messages").find().sort({$natural:-1}).limit(parseInt(limit)).toArray();
+            messages = await database.collection("messages").find(
+                { 
+                    $or: [ 
+                        {from: User}, 
+                        {to:   User},
+                        {to:   'Todos'},
+                    ] 
+                }
+            ).sort({$natural:-1}).limit(parseInt(limit)).toArray();
         }
         res.send(messages);
     } catch (e) {
