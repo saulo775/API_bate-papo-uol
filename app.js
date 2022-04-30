@@ -111,7 +111,15 @@ app.post("/messages", async (req, res)=>{
     }
 });
 
-
+app.get("/messages", async (req, res)=>{
+    try {
+        const messages = await database.collection("messages").find().toArray();
+        res.send(messages);
+    } catch (e) {
+        console.log("Não foi possível buscar as mensagens", e);
+        res.status(500);
+    }
+});
 
 function getExactHour() {
     const clock = dayjs(Date.now());
