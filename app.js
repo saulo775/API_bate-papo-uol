@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { MongoClient} from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import Joi from "joi";
 import dayjs from "dayjs";
 import chalk from "chalk";
@@ -15,28 +15,28 @@ app.use(cors());
 let database = null;
 const mongoClient = new MongoClient("mongodb://localhost/27017");
 const promise = mongoClient.connect();
-promise.then(()=>{
+promise.then(() => {
     database = mongoClient.db(DB_NAME);
     console.log(chalk.bold.blue("Conectado ao banco"));
 });
-promise.catch((e)=>{
+promise.catch((e) => {
     console.log("Problema ao conectar ao banco de dados", e);
 })
 
-app.post("/participants", async (req, res)=>{
+app.post("/participants", async (req, res) => {
     const userSchema = Joi.object({
         name: Joi.string().not(null).required()
     });
 
-    const {error, value} = userSchema.validate(req.body);
+    const { error, value } = userSchema.validate(req.body);
 
     if (error) {
         return res.sendStatus(422);
     }
 
-    try{
+    try {
         const participantAlreadyExists = await database.collection("participants").findOne(
-            {name: value.name}
+            { name: value.name }
         );
 
         if (participantAlreadyExists) {
@@ -45,7 +45,7 @@ app.post("/participants", async (req, res)=>{
 
         const date = Date.now();
         await database.collection("participants").insertOne(
-            {name: value.name, lastStatus: date}
+            { name: value.name, lastStatus: date }
         );
 
         await database.collection("messages").insertOne(
@@ -58,12 +58,12 @@ app.post("/participants", async (req, res)=>{
             }
         );
         res.sendStatus(201);
-    }catch(e){
+    } catch (e) {
         res.status(500).send("Ocorreu um erro ao salvar os participantes", e);
     }
 });
 
-app.get("/participants", async (req, res)=>{
+app.get("/participants", async (req, res) => {
     try {
         const allParticipants = await database.collection("participants").find().toArray();
         res.send(allParticipants);
@@ -71,17 +71,17 @@ app.get("/participants", async (req, res)=>{
         console.log(e);
         res.status(500).send("Erro ao buscar os participantes", e);
     }
-})
+});
 
-app.post("/messages", async (req, res)=>{
+app.post("/messages", async (req, res) => {
     const messageSchema = Joi.object({
         to: Joi.string().not(null),
         text: Joi.string().not(null),
     });
 
-    const {to, text, type} = req.body;
+    const { to, text, type } = req.body;
     const User = req.headers['user'];
-    const {error, value} = messageSchema.validate({to, text});
+    const { error, value } = messageSchema.validate({ to, text });
 
     if (error) {
         return res.sendStatus(422);
@@ -92,7 +92,7 @@ app.post("/messages", async (req, res)=>{
     }
 
     try {
-        const messageDestinate = await database.collection("participants").findOne({name: User});
+        const messageDestinate = await database.collection("participants").findOne({ name: User });
         if (messageDestinate === null) {
             return res.sendStatus(422);
         }
@@ -111,32 +111,32 @@ app.post("/messages", async (req, res)=>{
     }
 });
 
-app.get("/messages", async (req, res)=>{
-    const {limit} = req.query;
+app.get("/messages", async (req, res) => {
+    const { limit } = req.query;
     const User = req.headers['user'];
     try {
         let messages = null;
-        if(!limit){
+        if (!limit) {
             messages = await database.collection("messages").find(
-                { 
-                    $or: [ 
-                        {from: User}, 
-                        {to:   User},
-                        {to:   'Todos'},
-                    ] 
+                {
+                    $or: [
+                        { from: User },
+                        { to: User },
+                        { to: 'Todos' },
+                    ]
                 }
             ).toArray();
         }
-        else{
+        else {
             messages = await database.collection("messages").find(
-                { 
-                    $or: [ 
-                        {from: User}, 
-                        {to:   User},
-                        {to:   'Todos'},
-                    ] 
+                {
+                    $or: [
+                        { from: User },
+                        { to: User },
+                        { to: 'Todos' },
+                    ]
                 }
-            ).sort({$natural:-1}).limit(parseInt(limit)).toArray();
+            ).sort({ $natural: -1 }).limit(parseInt(limit)).toArray();
         }
         res.send(messages);
     } catch (e) {
@@ -145,31 +145,55 @@ app.get("/messages", async (req, res)=>{
     }
 });
 
-app.put("/status", async (req, res)=>{
+app.put("/status", async (req, res) => {
     const User = req.headers['user'];
 
     try {
-        const userToUpdate = await database.collection("participants").findOne({name: User});
+        const userToUpdate = await database.collection("participants").findOne({ name: User });
         if (userToUpdate === null) {
             return res.sendStatus(404);
         }
         await database.collection("participants").findOneAndUpdate(
-            {name:User}, 
-            {$set:{lastStatus: Date.now()}}
+            { name: User },
+            { $set: { lastStatus: Date.now() } }
         );
         res.sendStatus(200);
     } catch (e) {
         console.log("Não foi possível alterar o usuário", e);
         res.sendStatus(500);
     }
-})
+});
 
+setTimeout(() => {
+    removeInativeParticipants();
+},1500);
+
+async function removeInativeParticipants() {
+    try {
+        const allInativeParticipants = await database.collection("participants").find(
+            {lastStatus:{ $lt: Date.now() - 1000}}
+        ).toArray();
+
+        allInativeParticipants.map( async (participant)=>{
+            await database.collection('participants').findOneAndDelete({_id: new ObjectId(participant._id)});
+            await database.collection('messages').insertOne({
+                from: participant.name,
+                to: 'Todos',
+                text: 'sai da sala...',
+                type: 'status', 
+                time: getExactHour()
+            });
+        });
+    } catch (e) {
+        console.log("Não foi possível remover os usuários inativos",e);
+    }
+}
 
 function getExactHour() {
     const clock = dayjs(Date.now());
     return `${clock.hour()}:${clock.minute()}:${clock.second()}`;
 }
 
-app.listen(PORT, ()=>{
+app.listen(PORT, () => {
     console.log(chalk.bold.yellow(`Servidor rodando na porta ${PORT}`));
 })
