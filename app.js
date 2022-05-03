@@ -4,19 +4,24 @@ import { MongoClient, ObjectId } from "mongodb";
 import Joi from "joi";
 import dayjs from "dayjs";
 import chalk from "chalk";
+import 'dotenv/config';
 
-const PORT = 5001;
-const DB_NAME = "UOL_batePapo";
+
+const PORT = 5000;
+const INTERVAL_EXEC_REMOVE_USERS = 15000;
+const INTERVAL_REMOVE_USERS = 10000;
+
+//const process.env.DB_NAME = "UOL_batePapo";
 const app = express();
 
 app.use(express.json());
 app.use(cors());
 
 let database = null;
-const mongoClient = new MongoClient("mongodb://localhost/27017");
+const mongoClient = new MongoClient(process.env.DB_HOST);
 const promise = mongoClient.connect();
 promise.then(() => {
-    database = mongoClient.db(DB_NAME);
+    database = mongoClient.db(process.env.DB_NAME);
     console.log(chalk.bold.blue("Conectado ao banco"));
 });
 promise.catch((e) => {
@@ -47,7 +52,6 @@ app.post("/participants", async (req, res) => {
         await database.collection("participants").insertOne(
             { name: value.name, lastStatus: date }
         );
-
         await database.collection("messages").insertOne(
             {
                 from: value.name,
@@ -92,7 +96,9 @@ app.post("/messages", async (req, res) => {
     }
 
     try {
-        const messageDestinate = await database.collection("participants").findOne({ name: User });
+        const messageDestinate = await database.collection("participants").findOne(
+            { name: User }
+        );
         if (messageDestinate === null) {
             return res.sendStatus(422);
         }
@@ -149,7 +155,9 @@ app.put("/status", async (req, res) => {
     const User = req.headers['user'];
 
     try {
-        const userToUpdate = await database.collection("participants").findOne({ name: User });
+        const userToUpdate = await database.collection("participants").findOne(
+            { name: User }
+        );
         if (userToUpdate === null) {
             return res.sendStatus(404);
         }
@@ -164,18 +172,20 @@ app.put("/status", async (req, res) => {
     }
 });
 
-setTimeout(() => {
+setInterval(() => {
     removeInativeParticipants();
-},1500);
+},INTERVAL_EXEC_REMOVE_USERS);
 
 async function removeInativeParticipants() {
     try {
         const allInativeParticipants = await database.collection("participants").find(
-            {lastStatus:{ $lt: Date.now() - 1000}}
+            {lastStatus:{ $lt: Date.now() - INTERVAL_REMOVE_USERS}}
         ).toArray();
 
         allInativeParticipants.map( async (participant)=>{
-            await database.collection('participants').findOneAndDelete({_id: new ObjectId(participant._id)});
+            await database.collection('participants').findOneAndDelete(
+                {_id: new ObjectId(participant._id)}
+            );
             await database.collection('messages').insertOne({
                 from: participant.name,
                 to: 'Todos',
